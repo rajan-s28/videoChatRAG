@@ -126,6 +126,7 @@ async def get_captions_api(video_data: VideoURL):
 
     except TranscriptsDisabled as e:
         logger.error(f"My error {e}")
+        logger.error(f"lafdaa error ")
         logger.error(f"Transcripts are disabled for video ID: {video_id}")
         raise HTTPException(status_code=404, detail="Transcripts are disabled for this video.")
     except NoTranscriptFound:
