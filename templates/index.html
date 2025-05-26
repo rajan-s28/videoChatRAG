@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>YouTube Video Chat Bot</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: 'Inter', sans-serif; }
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #3498db;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+      display: none;
+      margin-left: 10px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+
+  <div class="bg-slate-800 shadow-xl rounded-xl p-8 w-full max-w-2xl">
+    <h1 class="text-3xl font-bold text-sky-400 text-center mb-4">YouTube Chat bot</h1>
+    <p class="text-center text-slate-400 mb-6">Paste a YouTube video link to extract and embed captions.</p>
+
+    <form id="captionForm" class="space-y-4">
+      <div>
+        <label for="youtubeUrl" class="block mb-1 text-slate-300">YouTube Video URL</label>
+        <input type="url" id="youtubeUrl" required
+          class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:ring-2 focus:ring-sky-500" />
+      </div>
+
+      <div class="flex items-center">
+        <button type="submit"
+          class="bg-sky-600 hover:bg-sky-700 text-white font-medium py-2 px-4 rounded-md flex items-center">
+          Extract Captions
+        </button>
+        <div id="loader" class="loader"></div>
+      </div>
+    </form>
+
+    <div id="message" class="mt-4 hidden p-3 rounded text-sm"></div>
+
+    <div id="captionsOutput" class="hidden mt-6">
+      <h2 class="text-xl text-sky-400 font-semibold mb-2">Extracted Captions:</h2>
+      <p id="captionInfo" class="text-xs text-slate-400 mb-2"></p>
+      <textarea id="captionsText" rows="10" readonly
+        class="w-full p-3 bg-slate-700 border border-slate-600 rounded-md text-sm text-slate-100 resize-none mb-4"></textarea>
+
+      <label for="questionInput" class="block mb-1 text-slate-300">Ask a question about the video:</label>
+      <input type="text" id="questionInput" placeholder="Type your question here..."
+        class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded-md text-white focus:ring-2 focus:ring-sky-500"
+        disabled />
+
+      <div class="mt-4 flex items-center">
+        <button id="askButton"
+          class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-2 px-4 rounded-md"
+          disabled>
+          Search
+        </button>
+        <div id="askLoader" class="loader"></div>
+      </div>
+
+      <div id="searchResults" class="mt-4 hidden text-sm text-slate-300 space-y-2"></div>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('captionForm');
+    const youtubeUrlInput = document.getElementById('youtubeUrl');
+    const loader = document.getElementById('loader');
+    const message = document.getElementById('message');
+    const captionsOutput = document.getElementById('captionsOutput');
+    const captionsText = document.getElementById('captionsText');
+    const captionInfo = document.getElementById('captionInfo');
+    const questionInput = document.getElementById('questionInput');
+    const askButton = document.getElementById('askButton');
+    const askLoader = document.getElementById('askLoader');
+    const searchResults = document.getElementById('searchResults');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const url = youtubeUrlInput.value.trim();
+      if (!url) return;
+
+      loader.style.display = 'inline-block';
+      message.classList.add('hidden');
+      captionsOutput.classList.add('hidden');
+      questionInput.disabled = true;
+      captionsText.value = '';
+      captionInfo.textContent = '';
+      askButton.disabled = true;
+
+      try {
+        const res = await fetch('/extract_captions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+
+        const data = await res.json();
+        loader.style.display = 'none';
+
+        if (res.ok) {
+          const captions = data.captions;
+          const videoId = Object.values(captions)[0][2];
+          const language = Object.values(captions)[0][3];
+
+          let formatted = '';
+          for (const [text, [start, end]] of Object.entries(captions)) {
+            formatted += `[${formatTime(start)} - ${formatTime(end)}] ${text}\n`;
+          }
+
+          captionsText.value = formatted.trim();
+          captionInfo.textContent = `Video ID: ${videoId} | Language: ${language}`;
+          captionsOutput.classList.remove('hidden');
+          showMessage('Captions extracted and embedded successfully!', 'success');
+
+          questionInput.disabled = false;
+        } else {
+          showMessage(data.detail || 'An error occurred.', 'error');
+        }
+      } catch (err) {
+        loader.style.display = 'none';
+        showMessage('Server error. Try again later.', 'error');
+      }
+    });
+
+    questionInput.addEventListener('input', () => {
+      askButton.disabled = questionInput.value.trim() === '';
+    });
+
+    askButton.addEventListener('click', async () => {
+      const question = questionInput.value.trim();
+      if (!question) return;
+
+      askLoader.style.display = 'inline-block';
+      askButton.disabled = true;
+      searchResults.innerHTML = '';
+      searchResults.classList.add('hidden');
+
+      try {
+        const res = await fetch('/ask_question', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })  // <-- Proper structure
+        });
+
+        const data = await res.json();
+        askLoader.style.display = 'none';
+
+        if (res.ok && Array.isArray(data.results)) {
+          if (data.results.length > 0) {
+            searchResults.innerHTML = data.results.map(item => `
+              <div class="border border-slate-700 p-3 rounded-md bg-slate-700">
+                <p><strong>Text:</strong> ${item.text}</p>
+                <p><strong>Time:</strong> ${formatTime(item.start_time)} - ${formatTime(item.end_time)}</p>
+                <p><strong>Score:</strong> ${item.score.toFixed(4)}</p>
+                <p><strong>Link:</strong> <a href="${item.url}" target="_blank" class="text-sky-400 hover:underline">${item.url}</a></p>
+              </div>`).join('');
+          } else {
+            searchResults.innerHTML = '<p>No results found.</p>';
+          }
+          searchResults.classList.remove('hidden');
+        } else {
+          showMessage(data.detail || 'Search failed.', 'error');
+        }
+      } catch (err) {
+        askLoader.style.display = 'none';
+        showMessage('Search error. Try again later.', 'error');
+      } finally {
+        askButton.disabled = false;
+      }
+    });
+
+    function showMessage(msg, type) {
+      message.textContent = msg;
+      message.className = `mt-4 p-3 rounded text-sm ${type === 'success' ? 'bg-green-600' : 'bg-red-600'} text-white`;
+      message.classList.remove('hidden');
+    }
+
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+  </script>
+</body>
+</html>
