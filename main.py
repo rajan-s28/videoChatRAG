@@ -124,7 +124,8 @@ async def get_captions_api(video_data: VideoURL):
         embeddings_with_timestamps(cap_list, detailed_captions, video_id)
         return {"captions": detailed_captions, "video_id": video_id, "language": transcript.language}
 
-    except TranscriptsDisabled:
+    except TranscriptsDisabled as e:
+        logger.error(f"My error {e}")
         logger.error(f"Transcripts are disabled for video ID: {video_id}")
         raise HTTPException(status_code=404, detail="Transcripts are disabled for this video.")
     except NoTranscriptFound:
